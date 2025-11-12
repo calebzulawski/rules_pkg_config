@@ -70,9 +70,12 @@ def python_binary(rctx, label):
         return tool
     fail("Python interpreter not provided and could not be found on PATH")
 
-def _otool_binary(rctx, override):
-    if override not in ["", None]:
-        return override
+def _otool_binary(rctx, override_label):
+    if override_label not in ["", None]:
+        path = rctx.path(override_label)
+        if not path.exists:
+            fail("otool label `{}` did not resolve".format(override_label))
+        return str(path)
     tool = _which(rctx, ["otool"])
     if tool:
         return tool
@@ -87,9 +90,9 @@ def identify_windows_dll(rctx, python_bin, dll_inspector, interface_path):
     dll_name = result.stdout.strip()
     return dll_name if dll_name != "" else None
 
-def shared_library_name(rctx, shared_path, platform, readelf_bin, otool_path):
+def shared_library_name(rctx, shared_path, platform, readelf_bin, otool_label):
     if platform.startswith("osx"):
-        tool = _otool_binary(rctx, otool_path)
+        tool = _otool_binary(rctx, otool_label)
         result = rctx.execute([tool, "-D", shared_path])
         if result.return_code != 0:
             fail("otool failed with {}\nstdout:\n{}\nstderr:\n{}".format(result.return_code, result.stdout, result.stderr))
@@ -122,11 +125,11 @@ def make_tool_config(
         readelf_candidates,
         python_label,
         dll_inspector,
-        otool_path,
+        otool_label,
         needs_windows_support):
     pkg_config_bin = pkg_config_binary(rctx, pkg_config_label, tool_repository, pkg_config_candidates)
     dll_script = dll_inspector or Label("//pkg_config/private/scripts:get_dll_from_import_lib.py")
-    resolved_otool_path = _otool_binary(rctx, otool_path)
+    resolved_otool_path = _otool_binary(rctx, otool_label)
 
     def _identify_windows_dll(interface_path):
         python_bin = python_binary(rctx, python_label)

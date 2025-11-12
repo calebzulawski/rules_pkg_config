@@ -107,7 +107,7 @@ def _pkg_config_repository_impl(rctx):
         readelf_candidates = rctx.attr.readelf_candidates,
         python_label = rctx.attr.python,
         dll_inspector = rctx.attr.dll_inspector,
-        otool_path = rctx.attr.otool_path,
+        otool_label = rctx.attr.otool,
         needs_windows_support = needs_windows,
     )
 
@@ -253,7 +253,7 @@ def _pkg_config_host_repository_impl(rctx):
         readelf_candidates = rctx.attr.readelf_candidates,
         python_label = rctx.attr.python,
         dll_inspector = None,
-        otool_path = rctx.attr.otool_path,
+        otool_label = rctx.attr.otool,
         needs_windows_support = False,
     )
 
@@ -334,7 +334,7 @@ pkg_config_repository_impl = repository_rule(
         ]),
         "python": attr.label(doc = "Label of the Python interpreter to use for helper scripts."),
         "dll_inspector": attr.label(doc = "Label of the helper script for resolving Windows DLL names.", default = Label("//pkg_config/private/scripts:get_dll_from_import_lib.py")),
-        "otool_path": attr.string(doc = "Path to an otool binary for macOS targets.", default = ""),
+        "otool": attr.label(doc = "Label of an otool binary for macOS targets.", default = None),
         "platform": attr.string(doc = "Platform identifier of the inspected repository."),
         "pkg_config_search_paths": attr.string_list(doc = "Additional pkg-config search paths relative to the search root.", default = []),
         "search_root": attr.string(doc = "Subdirectory within the search repository to treat as the pkg-config root.", default = ""),
@@ -353,7 +353,7 @@ pkg_config_host_repository_impl = repository_rule(
         "readelf_candidates": attr.string_list(doc = "Unused for host repositories (reserved for compatibility).", default = []),
         "python": attr.label(doc = "Label of the Python interpreter to use for helper scripts."),
         "dll_inspector": attr.label(doc = "Ignored for host repositories."),
-        "otool_path": attr.string(doc = "Path to an otool binary for macOS targets.", default = ""),
+        "otool": attr.label(doc = "Label of an otool binary for macOS targets.", default = None),
         "platform": attr.string(doc = "Platform identifier override used only to decide whether to request static libs.", default = ""),
         "pkg_config_search_paths": attr.string_list(doc = "Absolute pkg-config search paths.", default = []),
         "pkg_config_path_labels": attr.label_list(allow_files = True, doc = "Labels whose parent directories will be appended to PKG_CONFIG_PATH.", default = []),

@@ -12,15 +12,6 @@ _location = tag_class(
         "directory": attr.label(doc = "DirectoryInfo root that backs this location.", providers = [DirectoryInfo]),
         "paths": attr.string_list(doc = "Absolute pkg-config search paths on the host system."),
         "labels": attr.label_list(allow_files = True, doc = "DirectoryInfo labels whose directories should augment PKG_CONFIG_PATH.", providers = [DirectoryInfo], default = []),
-        "pkg_config": attr.label(doc = "Label of the pkg-config binary to invoke."),
-        "tool_repository": attr.string(doc = "Repository that hosts the pkg-config toolchain."),
-        "pkg_config_candidates": attr.string_list(doc = "Fallback pkg-config paths inside `tool_repository`.", default = []),
-        "readelf": attr.label(doc = "Label of the readelf binary."),
-        "readelf_candidates": attr.string_list(doc = "Fallback readelf paths inside `tool_repository`.", default = []),
-        "python": attr.label(doc = "Label of the Python interpreter for helper scripts."),
-        "dll_inspector": attr.label(doc = "Helper script for discovering Windows DLL names."),
-        "otool_path": attr.string(doc = "Path to an otool binary when targeting macOS.", default = ""),
-        "platform": attr.string(doc = "Override for the detected platform identifier.", default = ""),
         "pkg_config_search_paths": attr.string_list(doc = "Additional pkg-config lookup paths relative to the search root.", default = []),
         "search_root": attr.string(doc = "Subdirectory of the directory label that hosts pkg-config files.", default = ""),
     },
@@ -36,6 +27,15 @@ _package = tag_class(
     doc = "Declare a pkg-config module to import (applies to every location).",
 )
 
+_toolchain = tag_class(
+    attrs = {
+        "pkg_config": attr.label(doc = "Label of the pkg-config binary to invoke."),
+        "readelf": attr.label(doc = "Label of the readelf binary."),
+        "otool": attr.label(doc = "Label of an otool binary when targeting macOS.", default = None),
+        "platform": attr.string(doc = "Platform identifier override used only to decide whether to request static libs.", default = ""),
+    },
+    doc = "Describe the pkg-config toolchain used by every location.",
+)
 
 def _encode_entry(entry):
     modules = entry.modules if entry.modules else [entry.name]
@@ -54,6 +54,12 @@ def _pkg_config_extension_impl(ctx):
     packages = []
     locations = {}
     location_modules = {}
+    toolchain = struct(
+        pkg_config = None,
+        readelf = None,
+        otool = None,
+        platform = "",
+    )
 
     for mod in ctx.modules:
         for location in mod.tags.location:
@@ -65,6 +71,10 @@ def _pkg_config_extension_impl(ctx):
             location_modules.setdefault(location.name, []).append(mod)
         for entry in mod.tags.package:
             packages.append(entry)
+        for tool in mod.tags.toolchain:
+            if not mod.is_root:
+                fail("pkg_config.toolchain may only appear in the root module")
+            toolchain = tool
 
     def _assign_root(modules, tag, repo_name):
         for mod in modules:
@@ -81,6 +91,7 @@ def _pkg_config_extension_impl(ctx):
             continue
         repo_name = location_name + "_pkg_config"
 
+        tool = toolchain
         if location.directory not in ["", None]:
             if location.paths or location.labels:
                 fail("pkg_config.search_location `{}` cannot mix directory roots with host paths".format(location_name))
@@ -88,17 +99,13 @@ def _pkg_config_extension_impl(ctx):
                 name = repo_name,
                 directory_label = location.directory,
                 entries = encoded_entries,
-                pkg_config = location.pkg_config,
-                tool_repository = location.tool_repository,
-                pkg_config_candidates = location.pkg_config_candidates,
-                readelf = location.readelf,
-                readelf_candidates = location.readelf_candidates,
-                python = location.python,
-                dll_inspector = location.dll_inspector,
-                otool_path = location.otool_path,
-                platform = location.platform,
                 pkg_config_search_paths = location.pkg_config_search_paths,
                 search_root = location.search_root,
+                pkg_config = tool.pkg_config,
+                readelf = tool.readelf,
+                python = None,
+                otool = tool.otool,
+                platform = tool.platform,
             )
             _assign_root(location_modules.get(location_name, []), location, repo_name)
             continue
@@ -111,15 +118,11 @@ def _pkg_config_extension_impl(ctx):
             entries = encoded_entries,
             pkg_config_search_paths = location.paths,
             pkg_config_path_labels = location.labels,
-            pkg_config = location.pkg_config,
-            tool_repository = location.tool_repository,
-            pkg_config_candidates = location.pkg_config_candidates,
-            readelf = location.readelf,
-            readelf_candidates = location.readelf_candidates,
-            python = location.python,
-            dll_inspector = location.dll_inspector,
-            otool_path = location.otool_path,
-            platform = location.platform,
+            pkg_config = tool.pkg_config,
+            readelf = tool.readelf,
+            python = None,
+            otool = tool.otool,
+            platform = tool.platform,
         )
         _assign_root(location_modules.get(location_name, []), location, repo_name)
 
@@ -134,6 +137,7 @@ pkg_config_extension = module_extension(
     tag_classes = {
         "location": _location,
         "package": _package,
+        "toolchain": _toolchain,
     },
     doc = "Expose pkg-config imports via named search locations.",
 )
