@@ -1,0 +1,24 @@
+module(
+    name = "repo_pkg_config_example",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "rules_pkg_config", version = "0.0.0")
+bazel_dep(name = "repo_env_repo", version = "0.0.1")
+
+local_path_override(module_name = "rules_pkg_config", path = "../..")
+local_path_override(module_name = "repo_env_repo", path = "repo_env_repo")
+
+pkg = use_extension("@rules_pkg_config//pkg_config:extensions.bzl", "pkg_config")
+
+pkg.location(
+    name = "repo_location",
+    directory = "@repo_env_repo//:files",
+)
+
+pkg.package(
+    name = "repo_headers",
+    modules = ["simple"],
+)
+
+use_repo(pkg, "repo_location_pkg_config")

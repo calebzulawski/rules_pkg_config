@@ -1,0 +1,5 @@
+cc_test(
+    name = "repo_hello",
+    srcs = ["main.cc"],
+    deps = ["@repo_location_pkg_config//pkg_config:repo_headers"],
+)
