@@ -9,18 +9,14 @@ local_path_override(module_name = "rules_pkg_config", path = "../..")
 
 pkg = use_extension("@rules_pkg_config//pkg_config:extensions.bzl", "pkg_config")
 
-pkg.location(
-    name = "host_location",
-    paths = [
+pkg.import_from_host(
+    search_paths = [
         "/usr/lib/*/pkgconfig",
         "/usr/lib/pkgconfig",
         "/usr/share/pkgconfig",
     ],
 )
 
-pkg.package(
-    name = "host_headers",
-    modules = ["zlib"],
-)
+pkg.package(name = "zlib")
 
-use_repo(pkg, "host_location_pkg_config")
+use_repo(pkg, "pkg_config")

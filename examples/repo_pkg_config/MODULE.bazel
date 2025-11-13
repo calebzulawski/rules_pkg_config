@@ -11,14 +11,10 @@ local_path_override(module_name = "repo_env_repo", path = "repo_env_repo")
 
 pkg = use_extension("@rules_pkg_config//pkg_config:extensions.bzl", "pkg_config")
 
-pkg.location(
-    name = "repo_location",
+pkg.import_from_directory(
     directory = "@repo_env_repo//:files",
+    compatible_with = "//conditions:default",
 )
+pkg.package(name = "simple")
 
-pkg.package(
-    name = "repo_headers",
-    modules = ["simple"],
-)
-
-use_repo(pkg, "repo_location_pkg_config")
+use_repo(pkg, "pkg_config")

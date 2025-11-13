@@ -1,5 +1,5 @@
 cc_test(
     name = "host_hello",
     srcs = ["main.cc"],
-    deps = ["@host_location_pkg_config//pkg_config:host_headers"],
+    deps = ["@pkg_config//pkg_config:zlib"],
 )

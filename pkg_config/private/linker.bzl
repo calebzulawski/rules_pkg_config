@@ -5,31 +5,12 @@ load("//pkg_config/private:paths.bzl", "find_file_by_name", "find_file_with_exte
 
 _ENV_ROOT_PLACEHOLDER = "__rules_conda_env__"
 
-def _library_config(platform):
-    if not platform:
-        platform = ""
-    if platform.startswith("win"):
-        return struct(
-            prefixes = ["", "lib"],
-            shared_exts = [".dll"],
-            static_exts = [".a", ".lib"],
-            interface_exts = [".dll.a", ".lib"],
-            dll_dirs = ["Library/bin", "bin"],
-        )
-    if platform.startswith("osx"):
-        return struct(
-            prefixes = ["lib"],
-            shared_exts = [".*.dylib", ".dylib"],
-            static_exts = [".a"],
-            interface_exts = None,
-            dll_dirs = [],
-        )
+def _library_config():
     return struct(
-        prefixes = ["lib"],
-        shared_exts = [".so.*", ".so"],
-        static_exts = [".a"],
-        interface_exts = None,
-        dll_dirs = [],
+        prefixes = ["", "lib"],
+        shared_exts = [".*.dylib", ".dylib", ".so.*", ".so"],
+        static_exts = [".a", ".lib"],
+        interface_exts = [".lib"],
     )
 
 def with_placeholder(flag, root):
@@ -88,8 +69,8 @@ def _resolve_windows_dynamic_library(rctx, env_root, env_root_str, lib_dirs, int
 
     return dynamic_entry(dll_entry.relative, interface.relative)
 
-def _resolve_posix_shared_library(rctx, env_root, env_root_str, lib_dirs, match, platform, tools):
-    soname = tools.shared_library_name(match.absolute, platform)
+def _resolve_posix_shared_library(rctx, env_root, env_root_str, lib_dirs, match, tools):
+    soname = tools.shared_library_name(match.absolute)
     if not soname:
         return match.relative
     if "/" in soname or "\\" in soname or soname.startswith("@"):
@@ -105,7 +86,8 @@ def _resolve_posix_shared_library(rctx, env_root, env_root_str, lib_dirs, match,
         return replacement.relative
     return match.relative
 
-def _resolve_library_entry(rctx, env_root, env_root_str, lib_dirs, lib_name, static, platform_config, platform, tools):
+def _resolve_library_entry(rctx, env_root, env_root_str, lib_dirs, lib_name, static, tools):
+    platform_config = _library_config()
     literal = lib_name.startswith(":")
     normalized_name = lib_name.removeprefix(":") if literal else lib_name
     candidate_bases = [normalized_name] if literal else [prefix + normalized_name for prefix in platform_config.prefixes]
@@ -136,24 +118,18 @@ def _resolve_library_entry(rctx, env_root, env_root_str, lib_dirs, lib_name, sta
 
     match = find_file_with_extensions(env_root, env_root_str, lib_dirs, candidate_bases, platform_config.shared_exts)
     if match:
-        shared_path = match.relative
-        if not platform.startswith("win"):
-            shared_path = _resolve_posix_shared_library(
-                rctx,
-                env_root,
-                env_root_str,
-                lib_dirs,
-                match,
-                platform,
-                tools,
-            )
+        shared_path = _resolve_posix_shared_library(
+            rctx,
+            env_root,
+            env_root_str,
+            lib_dirs,
+            match,
+            tools,
+        )
         return dynamic_entry(shared_path, "")
     return None
 
-def resolve_link_entries(rctx, env_root, env_root_str, lib_args, static, platform, tools):
-    config = _library_config(platform)
-    if platform.startswith("win"):
-        static = False
+def resolve_link_entries(rctx, env_root, env_root_str, lib_args, static, tools):
     lib_dirs = []
     for flag in lib_args:
         if flag.startswith("-L"):
@@ -179,8 +155,6 @@ def resolve_link_entries(rctx, env_root, env_root_str, lib_args, static, platfor
                 lib_dirs,
                 lib_name,
                 static,
-                config,
-                platform,
                 tools,
             )
             if resolved:

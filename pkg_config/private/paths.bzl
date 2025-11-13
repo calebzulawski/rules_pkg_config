@@ -106,18 +106,10 @@ def find_file_by_name(env_root, env_root_str, directories, filename):
                 return info
     return None
 
-def pkg_config_paths(env_root, extra_paths):
-    candidates = [
-        "lib/pkgconfig",
-        "lib64/pkgconfig",
-        "share/pkgconfig",
-        "Library/lib/pkgconfig",
-        "Library/lib64/pkgconfig",
-        "Library/share/pkgconfig",
-    ] + extra_paths
+def pkg_config_paths(root, search_paths):
     dirs = []
-    for rel in candidates:
-        candidate = env_root.get_child(rel.replace("//", "/"))
+    for p in search_paths:
+        candidate = root.get_child(p.replace("//", "/"))
         if candidate.exists:
             dirs.append(str(candidate))
     return dirs

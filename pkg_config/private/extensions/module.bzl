@@ -1,145 +1,112 @@
 """Module extension helpers for pkg-config repositories."""
+
 load("@bazel_skylib//rules/directory:providers.bzl", "DirectoryInfo")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load(
     "//pkg_config/private:repository.bzl",
+    "pkg_config_directory_repository",
     "pkg_config_host_repository",
     "pkg_config_repository",
 )
 
-_location = tag_class(
-    attrs = {
-        "name": attr.string(mandatory = True, doc = "Name that packages use to reference this location."),
-        "directory": attr.label(doc = "DirectoryInfo root that backs this location.", providers = [DirectoryInfo]),
-        "paths": attr.string_list(doc = "Absolute pkg-config search paths on the host system."),
-        "labels": attr.label_list(allow_files = True, doc = "DirectoryInfo labels whose directories should augment PKG_CONFIG_PATH.", providers = [DirectoryInfo], default = []),
-        "pkg_config_search_paths": attr.string_list(doc = "Additional pkg-config lookup paths relative to the search root.", default = []),
-        "search_root": attr.string(doc = "Subdirectory of the directory label that hosts pkg-config files.", default = ""),
-    },
-    doc = "Describe pkg-config search roots (either repository-based or host-based).",
-)
+_import_from_host = tag_class({
+    "search_paths": attr.string_list(doc = "Extra directories to search for .pc files"),
+})
 
-_package = tag_class(
-    attrs = {
-        "name": attr.string(mandatory = True, doc = "pkg_config_import target name."),
-        "modules": attr.string_list(doc = "pkg-config modules to query. Defaults to [name]."),
-        "static": attr.bool(default = False, doc = "Request static linking when supported."),
-    },
-    doc = "Declare a pkg-config module to import (applies to every location).",
-)
+_import_from_directory = tag_class({
+    "directory": attr.label(doc = "Directory containing packages", providers = [DirectoryInfo], mandatory = True),
+    "compatible_with": attr.label(doc = "Platform constraints for this directory", mandatory = True),
+    "search_paths": attr.string_list(doc = "Subdirectories to search for .pc files", default = ["lib/pkgconfig", "share/pkgconfig"]),
+})
 
-_toolchain = tag_class(
-    attrs = {
-        "pkg_config": attr.label(doc = "Label of the pkg-config binary to invoke."),
-        "readelf": attr.label(doc = "Label of the readelf binary."),
-        "otool": attr.label(doc = "Label of an otool binary when targeting macOS.", default = None),
-        "platform": attr.string(doc = "Platform identifier override used only to decide whether to request static libs.", default = ""),
-    },
-    doc = "Describe the pkg-config toolchain used by every location.",
-)
+_package = tag_class({
+    "name": attr.string(doc = "Name of the package", mandatory = True),
+})
 
-def _encode_entry(entry):
-    modules = entry.modules if entry.modules else [entry.name]
-    data = {
-        "name": entry.name,
-        "modules": modules,
-    }
-    if entry.static:
-        data["static"] = True
-    return json.encode(data)
-
+_toolchain = tag_class({
+    "pkgconfig": attr.label(),
+    "readelf": attr.label(),
+    "otool": attr.label(),
+})
 
 def _pkg_config_extension_impl(ctx):
     root_direct = {}
     root_dev = {}
     packages = []
-    locations = {}
-    location_modules = {}
+    host_import = None
+    directory_imports = []
     toolchain = struct(
         pkg_config = None,
         readelf = None,
         otool = None,
-        platform = "",
     )
 
+    # Read tags
     for mod in ctx.modules:
-        for location in mod.tags.location:
-            if not mod.is_root:
-                fail("pkg_config.search_location may only appear in the root module")
-            if location.name in locations:
-                fail("pkg_config.search_location `{}` already defined".format(location.name))
-            locations[location.name] = location
-            location_modules.setdefault(location.name, []).append(mod)
-        for entry in mod.tags.package:
-            packages.append(entry)
-        for tool in mod.tags.toolchain:
-            if not mod.is_root:
-                fail("pkg_config.toolchain may only appear in the root module")
-            toolchain = tool
+        if mod.is_root:
+            for t in mod.tags.toolchain:
+                toolchain = struct(
+                    pkg_config = t.pkg_config,
+                    readelf = t.readelf,
+                    otool = t.otool,
+                )
+            for i in mod.tags.import_from_host:
+                host_import = i
+            directory_imports = mod.tags.import_from_directory
+        packages += mod.tags.package
 
-    def _assign_root(modules, tag, repo_name):
-        for mod in modules:
-            if not mod.is_root:
-                continue
-            if ctx.is_dev_dependency(tag):
-                root_dev[repo_name] = True
-            else:
-                root_direct[repo_name] = True
-
-    for location_name, location in locations.items():
-        encoded_entries = [_encode_entry(entry) for entry in packages]
-        if not encoded_entries:
-            continue
-        repo_name = location_name + "_pkg_config"
-
-        tool = toolchain
-        if location.directory not in ["", None]:
-            if location.paths or location.labels:
-                fail("pkg_config.search_location `{}` cannot mix directory roots with host paths".format(location_name))
-            pkg_config_repository(
-                name = repo_name,
-                directory_label = location.directory,
-                entries = encoded_entries,
-                pkg_config_search_paths = location.pkg_config_search_paths,
-                search_root = location.search_root,
-                pkg_config = tool.pkg_config,
-                readelf = tool.readelf,
-                python = None,
-                otool = tool.otool,
-                platform = tool.platform,
-            )
-            _assign_root(location_modules.get(location_name, []), location, repo_name)
-            continue
-
-        if not location.paths and not location.labels:
-            fail("pkg_config.search_location `{}` must provide either a directory or host paths".format(location_name))
-
+    # Create repos
+    repos = {}
+    if host_import:
+        repos["pkg_config_host"] = "//conditions:default"
         pkg_config_host_repository(
-            name = repo_name,
-            entries = encoded_entries,
-            pkg_config_search_paths = location.paths,
-            pkg_config_path_labels = location.labels,
-            pkg_config = tool.pkg_config,
-            readelf = tool.readelf,
-            python = None,
-            otool = tool.otool,
-            platform = tool.platform,
+            name = "pkg_config_host",
+            packages = [p.name for p in packages],
+            search_paths = host_import.search_paths,
+            pkg_config = toolchain.pkg_config,
+            readelf = toolchain.readelf,
+            otool = toolchain.otool,
         )
-        _assign_root(location_modules.get(location_name, []), location, repo_name)
+
+    for directory_import in directory_imports:
+        name = "pkg_config_" + str(hash(str(directory_import.compatible_with)))
+        repos[name] = directory_import.compatible_with
+        pkg_config_directory_repository(
+            name = name,
+            packages = [p.name for p in packages],
+            directory = directory_import.directory,
+            search_paths = directory_import.search_paths,
+            pkg_config = toolchain.pkg_config,
+            readelf = toolchain.readelf,
+            otool = toolchain.otool,
+        )
+
+    pkg_config_repository(
+        name = "pkg_config",
+        packages = [p.name for p in packages],
+        repos = repos,
+    )
+
+    if ctx.root_module_has_non_dev_dependency:
+        root_module_direct_deps = ["pkg_config"]
+        root_module_direct_dev_deps = []
+    else:
+        root_module_direct_deps = []
+        root_module_direct_dev_deps = ["pkg_config"]
 
     return ctx.extension_metadata(
-        root_module_direct_deps = sorted(root_direct.keys()),
-        root_module_direct_dev_deps = sorted(root_dev.keys()),
+        root_module_direct_deps = root_module_direct_dev_deps,
+        root_module_direct_dev_deps = root_module_direct_dev_deps,
         reproducible = True,
     )
 
 pkg_config_extension = module_extension(
     implementation = _pkg_config_extension_impl,
     tag_classes = {
-        "location": _location,
+        "import_from_host": _import_from_host,
+        "import_from_directory": _import_from_directory,
         "package": _package,
         "toolchain": _toolchain,
     },
-    doc = "Expose pkg-config imports via named search locations.",
+    doc = "Import packages via pkg-config",
 )
-
-__all__ = ["pkg_config_extension"]
