@@ -63,12 +63,22 @@ def _repo_root(rctx):
     root = _repository_root(rctx, repo_name)
     return root
 
-def _write_build_file(rctx, content):
+def _write_root_build_file(rctx):
+    rctx.file("BUILD.bazel", "package(default_visibility = [\"//visibility:public\"])")
+
+def _write_pkg_config_build_file(rctx, content):
     if content.strip() == "":
         rctx.file("pkg_config/BUILD.bazel", "")
     else:
         rctx.file("pkg_config/BUILD.bazel", content)
-    rctx.file("BUILD.bazel", "package(default_visibility = [\"//visibility:public\"])")
+
+def _write_package_build_file(rctx, package, content):
+    _write_root_build_file(rctx)
+    path = "{package}/BUILD.bazel".format(package = package)
+    if content.strip() == "":
+        rctx.file(path, "")
+    else:
+        rctx.file(path, content)
 
 def _pkg_config_command(tools, entry_static):
     cmd = [tools.pkg_config, "--print-errors", "--keep-system-cflags", "--keep-system-libs"]
@@ -86,12 +96,14 @@ def _pkg_config_directory_repository_impl(rctx):
         otool_label = rctx.attr.otool,
     )
 
-    lines = ["load(\"@rules_pkg_config//pkg_config/private:rule.bzl\", \"pkg_config_import\")", ""]
     base_paths = rctx.attr.search_paths
     pathsep = ";" if rctx.os.name.startswith("windows") else ":"
 
+    load_line = "load(\"@rules_pkg_config//pkg_config/private:rule.bzl\", \"pkg_config_import\")"
     for package in rctx.attr.packages:
+        package_lines = [load_line, ""]
         for static in [False, True]:
+            target_name = "static" if static else "dynamic"
             pkg_paths = pkg_config_paths(env_root, base_paths)
             if not pkg_paths:
                 fail("No pkg-config paths found inside {}".format(env_root))
@@ -116,21 +128,20 @@ def _pkg_config_directory_repository_impl(rctx):
                 tools,
             )
 
-            lines.append("""pkg_config_import(
+            package_lines.append("""pkg_config_import(
     name = "{name}",
     directory = "{directory}",
     cflags = {cflags},
     link_entries = {link_entries},
-    visibility = [\"//visibility:public\"],
+    visibility = ["//visibility:public"],
 )""".format(
-                name = package + ("_static" if static else ""),
+                name = target_name,
                 directory = str(rctx.attr.directory),
                 cflags = _format_string_list(cflag_args),
                 link_entries = _format_string_list(link_entries),
             ))
-            lines.append("")
-
-    _write_build_file(rctx, "\n".join(lines))
+            package_lines.append("")
+        _write_package_build_file(rctx, package, "\n".join(package_lines))
 
 def _expand_host_search_paths(rctx, python_bin):
     paths = [p for p in rctx.attr.search_paths if p.strip()]
@@ -206,17 +217,20 @@ def _pkg_config_host_repository_impl(rctx):
         otool_label = rctx.attr.otool,
     )
 
-    header_defs = []
-    lines = ["load(\"@rules_pkg_config//pkg_config/private:rule.bzl\", \"pkg_config_host_import\")", ""]
+    _write_root_build_file(rctx)
     python_bin = python_binary(rctx)
+    header_defs = []
     base_paths = _host_pkg_config_paths(rctx, python_bin)
     pathsep = ";" if rctx.os.name.startswith("windows") else ":"
     include_mirrors = {}
     mirror_queue = []
     rctx.file("pkg_config/host_includes/.keep", "")
+    load_line = "load(\"@rules_pkg_config//pkg_config/private:rule.bzl\", \"pkg_config_host_import\")"
 
     for package in rctx.attr.packages:
+        package_lines = [load_line, ""]
         for static in [True, False]:
+            target_name = "static" if static else "dynamic"
             entry_paths = base_paths
             env = {}
             if entry_paths:
@@ -228,19 +242,21 @@ def _pkg_config_host_repository_impl(rctx):
             header_groups = sorted(set(include_info.groups))
             lib_args = _run_pkg_config(rctx, base_cmd + ["--libs", package], env)
 
-            lines.append("""pkg_config_host_import(
+            formatted_header_groups = _format_string_list(["//pkg_config:{}".format(group) for group in header_groups])
+            package_lines.append("""pkg_config_host_import(
     name = \"{name}\",
     cflags = {cflags},
     libs = {libs},
     header_groups = {header_groups},
     visibility = [\"//visibility:public\"],
 )""".format(
-                name = package + ("_static" if static else ""),
+                name = target_name,
                 cflags = _format_string_list(cflag_args),
                 libs = _format_string_list(lib_args),
-                header_groups = _format_string_list(header_groups),
+                header_groups = formatted_header_groups,
             ))
-            lines.append("")
+            package_lines.append("")
+        _write_package_build_file(rctx, package, "\n".join(package_lines))
 
     for info in include_mirrors.values():
         relative = info.path[len("pkg_config/"):] if info.path.startswith("pkg_config/") else info.path
@@ -251,28 +267,46 @@ def _pkg_config_host_repository_impl(rctx):
 )""".format(target = info.target, relative = relative))
         header_defs.append("")
 
-    if header_defs:
-        lines = [lines[0], ""] + header_defs + lines[1:]
-
     _mirror_host_paths(rctx, mirror_queue, python_bin)
-    _write_build_file(rctx, "\n".join(lines))
+    _write_pkg_config_build_file(rctx, "\n".join(header_defs))
 
 def _pkg_config_repository_impl(rctx):
-    lines = []
+    _write_root_build_file(rctx)
     for package in rctx.attr.packages:
-        lines.append("""
-alias(
-    name = \"{name}\",
-    actual = select({{""".format(name = package))
-        for repo, constraint in rctx.attr.repos.items():
-            lines.append('        "{}": "@{}//pkg_config:{}",'.format(constraint, repo, package))
-        lines.append(
-            """
-    }),
-    visibility = ["//visibility:public"],
-)""",
-        )
-    _write_build_file(rctx, "\n".join(lines))
+        lines = []
+
+        def _select_alias_block(name, target):
+            lines.extend([
+                "alias(",
+                '    name = "{name}",'.format(name = name),
+                "    actual = select({",
+            ])
+            for repo, constraint in rctx.attr.repos.items():
+                lines.append('        "{constraint}": "@{repo}//{package}:{target}",'.format(
+                    constraint = constraint,
+                    repo = repo,
+                    package = package,
+                    target = target,
+                ))
+            lines.extend([
+                "    }),",
+                '    visibility = ["//visibility:public"],',
+                ")",
+                "",
+            ])
+
+        _select_alias_block("dynamic", "dynamic")
+        _select_alias_block("static", "static")
+        lines.extend([
+            "alias(",
+            '    name = "{name}",'.format(name = package),
+            '    actual = ":dynamic",',
+            '    visibility = ["//visibility:public"],',
+            ")",
+            "",
+        ])
+
+        rctx.file("{}/BUILD.bazel".format(package), "\n".join(lines))
 
 pkg_config_directory_repository = repository_rule(
     implementation = _pkg_config_directory_repository_impl,
