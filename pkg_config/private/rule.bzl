@@ -78,8 +78,8 @@ def _parse_cflags(flag_values):
     )
 
 def _pkg_config_import_impl(ctx):
-    dir_info = ctx.attr.directory[DirectoryInfo]
-    env_root = dir_info.path
+    dir_info = ctx.attr.directory[DirectoryInfo] if ctx.attr.directory else None
+    env_root = dir_info.path if dir_info else ""
 
     expanded_cflag_flags = [_expand_placeholder(flag, env_root) for flag in ctx.attr.cflags]
     cflags = _parse_cflags(expanded_cflag_flags)
@@ -87,12 +87,15 @@ def _pkg_config_import_impl(ctx):
 
     header_sets = []
     include_paths = []
-    for include in cflags.includes:
-        include_paths.append(include)
-        rel = _relativize_to_env(include, env_root)
-        if rel != None:
-            subdir = dir_info if rel == "" else dir_info.get_subdirectory(rel)
-            header_sets.append(subdir.transitive_files)
+    if dir_info:
+        for include in cflags.includes:
+            include_paths.append(include)
+            rel = _relativize_to_env(include, env_root)
+            if rel != None:
+                subdir = dir_info if rel == "" else dir_info.get_subdirectory(rel)
+                header_sets.append(subdir.transitive_files)
+    else:
+        include_paths = cflags.includes
 
     system_includes = depset(include_paths)
     defines = depset(cflags.defines)
@@ -125,48 +128,58 @@ def _pkg_config_import_impl(ctx):
         if kind == "flag":
             _add_flag_input(_expand_placeholder(entry.value, env_root))
         elif kind == "static":
-            path = entry.path
-            file = dir_info.get_file(path)
-            if file == None:
-                fail("Could not find static library `{}` within the repository".format(path))
-            library_to_link = cc_common.create_library_to_link(
-                actions = ctx.actions,
-                cc_toolchain = cc_toolchain,
-                feature_configuration = feature_configuration,
-                static_library = file,
-            )
-            linker_inputs.append(
-                cc_common.create_linker_input(
-                    owner = ctx.label,
-                    libraries = depset([library_to_link]),
-                    user_link_flags = depset(),
-                ),
-            )
+            path = _expand_placeholder(entry.path, env_root)
+            if dir_info:
+                file = dir_info.get_file(path)
+                if file == None:
+                    fail("Could not find static library `{}` within the repository".format(path))
+                library_to_link = cc_common.create_library_to_link(
+                    actions = ctx.actions,
+                    cc_toolchain = cc_toolchain,
+                    feature_configuration = feature_configuration,
+                    static_library = file,
+                )
+                linker_inputs.append(
+                    cc_common.create_linker_input(
+                        owner = ctx.label,
+                        libraries = depset([library_to_link]),
+                        user_link_flags = depset(),
+                    ),
+                )
+            else:
+                _add_flag_input(path)
         elif kind == "dynamic":
             library_path = entry.library
-            dynamic_file = dir_info.get_file(library_path)
-            if dynamic_file == None:
-                fail("Could not find dynamic library `{}` within the repository".format(library_path))
-            interface_path = entry.interface
-            interface_file = None
-            if interface_path not in ["", None]:
-                interface_file = dir_info.get_file(interface_path)
-                if interface_file == None:
-                    fail("Could not find interface library `{}` within the repository".format(interface_path))
-            library_to_link = cc_common.create_library_to_link(
-                actions = ctx.actions,
-                cc_toolchain = cc_toolchain,
-                feature_configuration = feature_configuration,
-                dynamic_library = dynamic_file,
-                interface_library = interface_file,
-            )
-            linker_inputs.append(
-                cc_common.create_linker_input(
-                    owner = ctx.label,
-                    libraries = depset([library_to_link]),
-                    user_link_flags = depset(),
-                ),
-            )
+            if dir_info:
+                dynamic_file = dir_info.get_file(library_path)
+                if dynamic_file == None:
+                    fail("Could not find dynamic library `{}` within the repository".format(library_path))
+                interface_path = entry.interface
+                interface_file = None
+                if interface_path not in ["", None]:
+                    interface_file = dir_info.get_file(interface_path)
+                    if interface_file == None:
+                        fail("Could not find interface library `{}` within the repository".format(interface_path))
+                library_to_link = cc_common.create_library_to_link(
+                    actions = ctx.actions,
+                    cc_toolchain = cc_toolchain,
+                    feature_configuration = feature_configuration,
+                    dynamic_library = dynamic_file,
+                    interface_library = interface_file,
+                )
+                linker_inputs.append(
+                    cc_common.create_linker_input(
+                        owner = ctx.label,
+                        libraries = depset([library_to_link]),
+                        user_link_flags = depset(),
+                    ),
+                )
+            else:
+                interface = entry.interface
+                if interface not in ["", None]:
+                    _add_flag_input(interface)
+                if library_path not in ["", None]:
+                    _add_flag_input(library_path)
         else:
             fail("Unknown link entry type `{}` in {}".format(kind, ctx.label))
 
@@ -201,7 +214,7 @@ def _pkg_config_import_impl(ctx):
 pkg_config_import_impl = rule(
     implementation = _pkg_config_import_impl,
     attrs = {
-        "directory": attr.label(mandatory = True, providers = [DirectoryInfo]),
+        "directory": attr.label(providers = [DirectoryInfo], default = None, doc = "Directory containing imported files; optional for absolute host imports."),
         "deps": attr.label_list(providers = [CcInfo], default = []),
         "cflags": attr.string_list(),
         "link_entries": attr.string_list(),
@@ -212,70 +225,4 @@ pkg_config_import_impl = rule(
     fragments = ["cpp"],
 )
 
-def _pkg_config_host_import_impl(ctx):
-    cflags = _parse_cflags(ctx.attr.cflags)
-
-    linker_inputs = []
-
-    def _add_flag(flag):
-        if flag in ["", None]:
-            return
-        linker_inputs.append(
-            cc_common.create_linker_input(
-                owner = ctx.label,
-                libraries = depset(),
-                user_link_flags = depset([flag]),
-            ),
-        )
-
-    for flag in cflags.others:
-        _add_flag(flag)
-
-    for flag in ctx.attr.libs:
-        _add_flag(flag)
-
-    header_files = depset(ctx.files.header_groups)
-    compilation_context = cc_common.create_compilation_context(
-        headers = header_files,
-        system_includes = depset(cflags.includes),
-        defines = depset(cflags.defines),
-    )
-
-    linking_context = cc_common.create_linking_context(
-        linker_inputs = depset(order = "topological", direct = linker_inputs),
-    )
-
-    if ctx.attr.deps:
-        dep_compilation_contexts = [d[CcInfo].compilation_context for d in ctx.attr.deps]
-        dep_linking_contexts = [d[CcInfo].linking_context for d in ctx.attr.deps]
-        compilation_context = cc_common.merge_compilation_contexts(
-            compilation_contexts = dep_compilation_contexts + [compilation_context],
-        )
-        linking_context = cc_common.merge_linking_contexts(
-            linking_contexts = dep_linking_contexts + [linking_context],
-        )
-
-    return [
-        CcInfo(
-            compilation_context = compilation_context,
-            linking_context = linking_context,
-        ),
-        DefaultInfo(files = header_files),
-    ]
-
-pkg_config_host_import_impl = rule(
-    implementation = _pkg_config_host_import_impl,
-    attrs = {
-        "cflags": attr.string_list(doc = "Raw pkg-config cflags."),
-        "libs": attr.string_list(doc = "Raw pkg-config linker flags."),
-        "deps": attr.label_list(providers = [CcInfo], default = []),
-        "header_groups": attr.label_list(allow_files = True, doc = "Header files mirrored from the host system.", default = []),
-    },
-    provides = [CcInfo],
-    doc = "Creates a CcInfo provider based on host pkg-config metadata (non-hermetic).",
-    toolchains = use_cc_toolchain(),
-    fragments = ["cpp"],
-)
-
 pkg_config_import = pkg_config_import_impl
-pkg_config_host_import = pkg_config_host_import_impl

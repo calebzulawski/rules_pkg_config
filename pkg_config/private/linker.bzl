@@ -1,7 +1,7 @@
 """Link-entry helpers for pkg-config repository logic."""
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
-load("//pkg_config/private:paths.bzl", "find_file_by_name", "find_file_with_extensions", "relativize_to_env")
+load("//pkg_config/private:paths.bzl", "absolute_path", "find_file_by_name", "find_file_with_extensions", "relativize_to_env")
 
 _ENV_ROOT_PLACEHOLDER = "__rules_conda_env__"
 
@@ -14,6 +14,8 @@ def _library_config():
     )
 
 def with_placeholder(flag, root):
+    if root in ["", None]:
+        return flag
     normalized = root.rstrip("/\\")
     variants = [normalized]
     forward = normalized.replace("\\", "/")
@@ -41,7 +43,7 @@ def dynamic_entry(library, interface):
     interface_field = interface if interface else ""
     return "|".join(["D", library, interface_field])
 
-def _resolve_windows_dynamic_library(rctx, env_root, env_root_str, lib_dirs, interface, config, tools):
+def _resolve_windows_dynamic_library(find_file_by_name_fn, lib_dirs, interface, dll_dirs, tools):
     if tools.identify_windows_dll == None:
         return None
     dll_name = tools.identify_windows_dll(interface.absolute)
@@ -49,27 +51,24 @@ def _resolve_windows_dynamic_library(rctx, env_root, env_root_str, lib_dirs, int
         return None
 
     interface_dir = paths.dirname(interface.relative)
-    if interface_dir in ["", "."]:
-        interface_dir = ""
-
     candidate_dirs = []
-    if interface_dir != "":
+    if interface_dir not in ["", "."]:
         candidate_dirs.append(interface_dir)
     candidate_dirs.extend(lib_dirs)
     for lib_dir in lib_dirs:
         stripped = lib_dir.removesuffix("/lib")
         if stripped != lib_dir:
             candidate_dirs.append(paths.join(stripped, "bin"))
-    candidate_dirs.extend(config.dll_dirs)
+    candidate_dirs.extend(dll_dirs)
     candidate_dirs = [d for d in candidate_dirs if d not in ["", None]]
 
-    dll_entry = find_file_by_name(env_root, env_root_str, candidate_dirs, dll_name)
+    dll_entry = find_file_by_name_fn(candidate_dirs, dll_name)
     if not dll_entry:
         return None
 
     return dynamic_entry(dll_entry.relative, interface.relative)
 
-def _resolve_posix_shared_library(rctx, env_root, env_root_str, lib_dirs, match, tools):
+def _resolve_posix_shared_library(find_file_by_name_fn, lib_dirs, match, tools):
     soname = tools.shared_library_name(match.absolute)
     if not soname:
         return match.relative
@@ -81,7 +80,7 @@ def _resolve_posix_shared_library(rctx, env_root, env_root_str, lib_dirs, match,
     if match_dir not in ["", "."]:
         candidate_dirs.append(match_dir)
     candidate_dirs.extend(lib_dirs)
-    replacement = find_file_by_name(env_root, env_root_str, candidate_dirs, soname)
+    replacement = find_file_by_name_fn(candidate_dirs, soname)
     if replacement:
         return replacement.relative
     return match.relative
@@ -92,53 +91,42 @@ def _resolve_library_entry(rctx, env_root, env_root_str, lib_dirs, lib_name, sta
     normalized_name = lib_name.removeprefix(":") if literal else lib_name
     candidate_bases = [normalized_name] if literal else [prefix + normalized_name for prefix in platform_config.prefixes]
 
+    find_with_ext = lambda directories, candidates, extensions: find_file_with_extensions(env_root, env_root_str, directories, candidates, extensions, rctx = rctx)
+    find_by_name = lambda directories, filename: find_file_by_name(env_root, env_root_str, directories, filename, rctx = rctx)
+
     if static:
-        match = find_file_with_extensions(env_root, env_root_str, lib_dirs, candidate_bases, platform_config.static_exts)
+        match = find_with_ext(lib_dirs, candidate_bases, platform_config.static_exts)
         if match:
             return static_entry(match.relative)
         return None
 
     if platform_config.interface_exts:
-        interface = find_file_with_extensions(env_root, env_root_str, lib_dirs, candidate_bases, platform_config.interface_exts)
+        interface = find_with_ext(lib_dirs, candidate_bases, platform_config.interface_exts)
         if interface:
-            if platform_config.dll_dirs:
-                resolved = _resolve_windows_dynamic_library(
-                    rctx,
-                    env_root,
-                    env_root_str,
-                    lib_dirs,
-                    interface,
-                    platform_config,
-                    tools,
-                )
-                if resolved:
-                    return resolved
-            else:
-                return dynamic_entry(interface.relative, "")
+            resolved = _resolve_windows_dynamic_library(find_by_name, lib_dirs, interface, platform_config.dll_dirs, tools)
+            if resolved:
+                return resolved
+            return dynamic_entry(interface.relative, "")
 
-    match = find_file_with_extensions(env_root, env_root_str, lib_dirs, candidate_bases, platform_config.shared_exts)
+    match = find_with_ext(lib_dirs, candidate_bases, platform_config.shared_exts)
     if match:
-        shared_path = _resolve_posix_shared_library(
-            rctx,
-            env_root,
-            env_root_str,
-            lib_dirs,
-            match,
-            tools,
-        )
+        shared_path = _resolve_posix_shared_library(find_by_name, lib_dirs, match, tools)
         return dynamic_entry(shared_path, "")
     return None
 
 def resolve_link_entries(rctx, env_root, env_root_str, lib_args, static, tools):
     lib_dirs = []
+    abs_dirs = []
     for flag in lib_args:
         if flag.startswith("-L"):
             directory = flag.removeprefix("-L")
             if directory == "":
                 fail("`-L` flag must be immediately followed by a path")
-            rel = relativize_to_env(directory, env_root_str)
+            rel = relativize_to_env(directory, env_root_str) if env_root_str not in ["", None] else None
             if rel != None:
                 lib_dirs.append(rel)
+            else:
+                abs_dirs.append(absolute_path(rctx, directory))
 
     entries = []
     for flag in lib_args:
@@ -148,15 +136,27 @@ def resolve_link_entries(rctx, env_root, env_root_str, lib_args, static, tools):
             lib_name = flag.removeprefix("-l")
             if lib_name == "":
                 fail("`-l` flag must be immediately followed by a library")
-            resolved = _resolve_library_entry(
-                rctx,
-                env_root,
-                env_root_str,
-                lib_dirs,
-                lib_name,
-                static,
-                tools,
-            )
+            resolved = None
+            if env_root != None:
+                resolved = _resolve_library_entry(
+                    rctx,
+                    env_root,
+                    env_root_str,
+                    lib_dirs,
+                    lib_name,
+                    static,
+                    tools,
+                )
+            if not resolved and abs_dirs:
+                resolved = _resolve_library_entry(
+                    rctx,
+                    None,
+                    None,
+                    abs_dirs,
+                    lib_name,
+                    static,
+                    tools,
+                )
             if resolved:
                 entries.append(resolved)
             else:
