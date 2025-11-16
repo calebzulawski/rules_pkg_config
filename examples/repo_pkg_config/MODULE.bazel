@@ -17,4 +17,4 @@ pkg.import_from_directory(
 )
 pkg.package(name = "simple")
 
-use_repo(pkg, "pkg_config")
+use_repo(pkg, "simple")

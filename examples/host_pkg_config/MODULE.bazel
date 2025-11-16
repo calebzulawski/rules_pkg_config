@@ -19,4 +19,4 @@ pkg.import_from_host(
 
 pkg.package(name = "zlib")
 
-use_repo(pkg, "pkg_config")
+use_repo(pkg, "zlib")

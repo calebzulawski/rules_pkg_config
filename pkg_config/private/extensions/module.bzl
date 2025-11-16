@@ -30,9 +30,8 @@ _toolchain = tag_class({
 })
 
 def _pkg_config_extension_impl(ctx):
-    root_direct = {}
-    root_dev = {}
     packages = []
+    root_packages = []
     host_import = None
     directory_imports = []
     toolchain = struct(
@@ -54,48 +53,63 @@ def _pkg_config_extension_impl(ctx):
                 host_import = i
             directory_imports = mod.tags.import_from_directory
         packages += mod.tags.package
+        if mod.is_root:
+            for pkg in mod.tags.package:
+                root_packages.append(pkg.name)
 
-    # Create repos
-    repos = {}
+    package_names = [p.name for p in packages]
+    package_repo_map = {name: {} for name in package_names}
+
     if host_import:
-        repos["pkg_config_host"] = "//conditions:default"
-        pkg_config_host_repository(
-            name = "pkg_config_host",
-            packages = [p.name for p in packages],
-            search_paths = host_import.search_paths,
-            pkg_config = toolchain.pkg_config,
-            readelf = toolchain.readelf,
-            otool = toolchain.otool,
-        )
+        for package in package_names:
+            repo_name = "pkg_config_host_{}".format(package)
+            package_repo_map[package]["//conditions:default"] = repo_name
+            pkg_config_host_repository(
+                name = repo_name,
+                package = package,
+                search_paths = host_import.search_paths,
+                pkg_config = toolchain.pkg_config,
+                readelf = toolchain.readelf,
+                otool = toolchain.otool,
+            )
 
     for directory_import in directory_imports:
-        name = "pkg_config_" + str(hash(str(directory_import.compatible_with)))
-        repos[name] = directory_import.compatible_with
-        pkg_config_directory_repository(
-            name = name,
-            packages = [p.name for p in packages],
-            directory = directory_import.directory,
-            search_paths = directory_import.search_paths,
-            pkg_config = toolchain.pkg_config,
-            readelf = toolchain.readelf,
-            otool = toolchain.otool,
+        constraint = directory_import.compatible_with
+        constraint_key = str(constraint)
+        for package in package_names:
+            identifier_source = "{}|{}|{}".format(package, directory_import.directory, constraint_key)
+            identifier = str(abs(hash(identifier_source)))
+            repo_name = "pkg_config_dir_{}_{}".format(package, identifier)
+            package_repo_map[package][constraint_key] = repo_name
+            pkg_config_directory_repository(
+                name = repo_name,
+                package = package,
+                directory = directory_import.directory,
+                search_paths = directory_import.search_paths,
+                pkg_config = toolchain.pkg_config,
+                readelf = toolchain.readelf,
+                otool = toolchain.otool,
+            )
+
+    for package in package_names:
+        repos = package_repo_map.get(package, {})
+        if not repos:
+            fail("Package `{}` has no pkg-config repositories".format(package))
+        pkg_config_repository(
+            name = package,
+            package = package,
+            repos = repos,
         )
 
-    pkg_config_repository(
-        name = "pkg_config",
-        packages = [p.name for p in packages],
-        repos = repos,
-    )
-
     if ctx.root_module_has_non_dev_dependency:
-        root_module_direct_deps = ["pkg_config"]
+        root_module_direct_deps = root_packages
         root_module_direct_dev_deps = []
     else:
         root_module_direct_deps = []
-        root_module_direct_dev_deps = ["pkg_config"]
+        root_module_direct_dev_deps = root_packages
 
     return ctx.extension_metadata(
-        root_module_direct_deps = root_module_direct_dev_deps,
+        root_module_direct_deps = root_module_direct_deps,
         root_module_direct_dev_deps = root_module_direct_dev_deps,
         reproducible = True,
     )

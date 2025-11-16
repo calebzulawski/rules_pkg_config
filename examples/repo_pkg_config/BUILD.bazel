@@ -1,5 +1,5 @@
 cc_test(
     name = "repo_hello",
     srcs = ["main.cc"],
-    deps = ["@pkg_config//simple:simple"],
+    deps = ["@simple"],
 )

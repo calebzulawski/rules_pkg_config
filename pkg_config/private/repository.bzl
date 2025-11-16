@@ -68,15 +68,7 @@ def _repo_root(rctx):
 def _write_root_build_file(rctx):
     rctx.file("BUILD.bazel", "package(default_visibility = [\"//visibility:public\"])")
 
-def _write_package_build_file(rctx, package, content):
-    _write_root_build_file(rctx)
-    path = "{package}/BUILD.bazel".format(package = package)
-    if content.strip() == "":
-        rctx.file(path, "")
-    else:
-        rctx.file(path, content)
-
-def _write_pkg_config_targets(rctx, package, entries):
+def _write_pkg_config_targets(rctx, entries):
     lines = [_PKG_CONFIG_LOAD, ""]
     for entry in entries:
         lines.append("pkg_config_import(")
@@ -88,7 +80,8 @@ def _write_pkg_config_targets(rctx, package, entries):
         lines.append('    visibility = ["//visibility:public"],')
         lines.append(")")
         lines.append("")
-    _write_package_build_file(rctx, package, "\n".join(lines))
+    _write_root_build_file(rctx)
+    rctx.file("BUILD.bazel", "\n".join(lines))
 
 def _pkg_config_command(tools, entry_static):
     cmd = [tools.pkg_config, "--print-errors", "--keep-system-cflags", "--keep-system-libs"]
@@ -97,6 +90,7 @@ def _pkg_config_command(tools, entry_static):
     return cmd
 
 def _pkg_config_directory_repository_impl(rctx):
+    package = rctx.attr.package
     env_root = _repo_root(rctx)
     env_root_str = env_path(str(env_root))
     tools = make_tool_config(
@@ -118,32 +112,31 @@ def _pkg_config_directory_repository_impl(rctx):
         "PKG_CONFIG_LIBDIR": "disable-the-default",
     }
 
-    for package in rctx.attr.packages:
-        entries = []
-        for static in [False, True]:
-            target_name = "static" if static else "dynamic"
-            base_cmd = _pkg_config_command(tools, static)
+    entries = []
+    for static in [False, True]:
+        target_name = "static" if static else "dynamic"
+        base_cmd = _pkg_config_command(tools, static)
 
-            cflag_args = _run_pkg_config(rctx, base_cmd + ["--cflags", package], env)
-            lib_args = _run_pkg_config(rctx, base_cmd + ["--libs", package], env)
+        cflag_args = _run_pkg_config(rctx, base_cmd + ["--cflags", package], env)
+        lib_args = _run_pkg_config(rctx, base_cmd + ["--libs", package], env)
 
-            cflag_args = relativize_flags(cflag_args, env_root_str)
-            link_entries = resolve_link_entries(
-                rctx,
-                env_root,
-                env_root_str,
-                lib_args,
-                static,
-                tools,
-            )
+        cflag_args = relativize_flags(cflag_args, env_root_str)
+        link_entries = resolve_link_entries(
+            rctx,
+            env_root,
+            env_root_str,
+            lib_args,
+            static,
+            tools,
+        )
 
-            entries.append(struct(
-                name = target_name,
-                directory = str(rctx.attr.directory),
-                cflags = cflag_args,
-                link_entries = link_entries,
-            ))
-        _write_pkg_config_targets(rctx, package, entries)
+        entries.append(struct(
+            name = target_name,
+            directory = str(rctx.attr.directory),
+            cflags = cflag_args,
+            link_entries = link_entries,
+        ))
+    _write_pkg_config_targets(rctx, entries)
 
 def _expand_host_search_paths(rctx, python_bin):
     paths = [p for p in rctx.attr.search_paths if p.strip()]
@@ -181,84 +174,83 @@ def _pkg_config_host_repository_impl(rctx):
 
     _write_root_build_file(rctx)
     python_bin = python_binary(rctx)
+    package = rctx.attr.package
     base_paths = _host_pkg_config_paths(rctx, python_bin)
     pathsep = ";" if rctx.os.name.startswith("windows") else ":"
     shared_env = None
     if base_paths:
         shared_env = pathsep.join(base_paths)
 
-    for package in rctx.attr.packages:
-        entries = []
-        for static in [False, True]:
-            target_name = "static" if static else "dynamic"
-            env = {}
-            if shared_env:
-                env["PKG_CONFIG_PATH"] = shared_env
+    entries = []
+    for static in [False, True]:
+        target_name = "static" if static else "dynamic"
+        env = {}
+        if shared_env:
+            env["PKG_CONFIG_PATH"] = shared_env
 
-            base_cmd = _pkg_config_command(tools, static)
-            raw_cflags = _run_pkg_config(rctx, base_cmd + ["--cflags", package], env)
-            cflag_args = absolutize_cflags(rctx, raw_cflags)
-            raw_libs = _run_pkg_config(rctx, base_cmd + ["--libs", package], env)
-            link_entries = resolve_link_entries(
-                rctx,
-                env_root = None,
-                env_root_str = None,
-                lib_args = raw_libs,
-                static = static,
-                tools = tools,
-            )
+        base_cmd = _pkg_config_command(tools, static)
+        raw_cflags = _run_pkg_config(rctx, base_cmd + ["--cflags", package], env)
+        cflag_args = absolutize_cflags(rctx, raw_cflags)
+        raw_libs = _run_pkg_config(rctx, base_cmd + ["--libs", package], env)
+        link_entries = resolve_link_entries(
+            rctx,
+            env_root = None,
+            env_root_str = None,
+            lib_args = raw_libs,
+            static = static,
+            tools = tools,
+        )
 
-            entries.append(struct(
-                name = target_name,
-                directory = None,
-                cflags = cflag_args,
-                link_entries = link_entries,
-            ))
-        _write_pkg_config_targets(rctx, package, entries)
+        entries.append(struct(
+            name = target_name,
+            directory = None,
+            cflags = cflag_args,
+            link_entries = link_entries,
+        ))
+    _write_pkg_config_targets(rctx, entries)
 
 def _pkg_config_repository_impl(rctx):
+    package = rctx.attr.package
     _write_root_build_file(rctx)
-    for package in rctx.attr.packages:
-        lines = []
+    lines = []
 
-        def _select_alias_block(name, target):
-            lines.extend([
-                "alias(",
-                '    name = "{name}",'.format(name = name),
-                "    actual = select({",
-            ])
-            for repo, constraint in rctx.attr.repos.items():
-                lines.append('        "{constraint}": "@{repo}//{package}:{target}",'.format(
-                    constraint = constraint,
-                    repo = repo,
-                    package = package,
-                    target = target,
-                ))
-            lines.extend([
-                "    }),",
-                '    visibility = ["//visibility:public"],',
-                ")",
-                "",
-            ])
-
-        _select_alias_block("dynamic", "dynamic")
-        _select_alias_block("static", "static")
+    def _alias_block(name, target):
         lines.extend([
             "alias(",
-            '    name = "{name}",'.format(name = package),
-            '    actual = ":dynamic",',
+            '    name = "{name}",'.format(name = name),
+            "    actual = select({",
+        ])
+        for constraint, repo in sorted(rctx.attr.repos.items()):
+            lines.append('        "{constraint}": "@{repo}//:{target}",'.format(
+                constraint = constraint,
+                repo = repo,
+                target = target,
+            ))
+        lines.extend([
+            "    }),",
             '    visibility = ["//visibility:public"],',
             ")",
             "",
         ])
 
-        rctx.file("{}/BUILD.bazel".format(package), "\n".join(lines))
+    _alias_block("dynamic", "dynamic")
+    _alias_block("static", "static")
+    lines.extend([
+        "alias(",
+        '    name = "{name}",'.format(name = package),
+        '    actual = ":dynamic",',
+        '    visibility = ["//visibility:public"],',
+        ")",
+        "",
+    ])
+
+    rctx.file("BUILD.bazel", "\n".join(lines))
 
 pkg_config_directory_repository = repository_rule(
     implementation = _pkg_config_directory_repository_impl,
     attrs = {
         "directory": attr.label(),
-        "packages": attr.string_list(),
+        "package": attr.string(),
         "pkg_config": attr.label(),
         "readelf": attr.label(),
         "otool": attr.label(),
@@ -270,7 +262,7 @@ pkg_config_directory_repository = repository_rule(
 pkg_config_host_repository = repository_rule(
     implementation = _pkg_config_host_repository_impl,
     attrs = {
-        "packages": attr.string_list(),
+        "package": attr.string(),
         "pkg_config": attr.label(),
         "readelf": attr.label(),
         "otool": attr.label(),
@@ -282,8 +274,8 @@ pkg_config_host_repository = repository_rule(
 pkg_config_repository = repository_rule(
     implementation = _pkg_config_repository_impl,
     attrs = {
-        "packages": attr.string_list(),
-        "repos": attr.string_keyed_label_dict(),
+        "package": attr.string(),
+        "repos": attr.string_dict(),
     },
     doc = "Aliases packages per platform constraint set.",
 )
