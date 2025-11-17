@@ -70,7 +70,9 @@ def _resolve_windows_dynamic_library(find_file_by_name_fn, lib_dirs, interface, 
 
 def _resolve_posix_shared_library(find_file_by_name_fn, lib_dirs, match, tools):
     soname = tools.shared_library_name(match.absolute)
-    if not soname:
+    if soname == None:
+        return None
+    if soname == match.absolute:
         return match.relative
     if "/" in soname or "\\" in soname or soname.startswith("@"):
         return match.relative
@@ -111,7 +113,8 @@ def _resolve_library_entry(rctx, env_root, env_root_str, lib_dirs, lib_name, sta
     match = find_with_ext(lib_dirs, candidate_bases, platform_config.shared_exts)
     if match:
         shared_path = _resolve_posix_shared_library(find_by_name, lib_dirs, match, tools)
-        return dynamic_entry(shared_path, "")
+        if shared_path != None:
+            return dynamic_entry(shared_path, "")
     return None
 
 def resolve_link_entries(rctx, env_root, env_root_str, lib_args, static, tools):

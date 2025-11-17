@@ -27,7 +27,7 @@ def shared_library_name(rctx, shared_path, readelf_bin, otool_bin):
         lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
         if len(lines) >= 2:
             return lines[-1]
-        return None
+        return shared_path
     else:
         result = rctx.execute([readelf_bin, "-d", shared_path])
         if result.return_code != 0:
@@ -39,7 +39,7 @@ def shared_library_name(rctx, shared_path, readelf_bin, otool_bin):
             end = line.find("]", start + 1)
             if start != -1 and end != -1:
                 return line[start + 1:end].strip()
-        return None
+        return shared_path
 
 def make_tool_config(
         rctx,
