@@ -48,6 +48,10 @@ jobs:
         if: runner.os == 'Windows'
         run: vcpkg install zlib:x64-windows
 
+      - name: Install pkg-config (Windows)
+        if: runner.os == 'Windows'
+        run: choco install pkgconfiglite --no-progress -y
+
       - name: Import-from-directory example
         run: bazel test //...
         working-directory: examples/import_from_directory
