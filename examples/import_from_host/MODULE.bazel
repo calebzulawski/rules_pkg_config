@@ -1,5 +1,5 @@
 module(
-    name = "host_pkg_config_example",
+    name = "import_from_host_example",
     version = "0.0.0",
 )
 

@@ -1,5 +1,5 @@
 module(
-    name = "repo_pkg_config_example",
+    name = "import_from_directory_example",
     version = "0.0.0",
 )
 
