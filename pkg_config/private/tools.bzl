@@ -47,9 +47,20 @@ def make_tool_config(
         pkg_config_label,
         readelf_label,
         otool_label):
-    pkg_config_bin = rctx.path(pkg_config_label) if pkg_config_label else rctx.which("pkg-config")
-    readelf_bin = rctx.path(readelf_label) if readelf_label else rctx.which("readelf")
-    otool_bin = rctx.path(otool_label) if otool_label else rctx.which("otool")
+    def _resolve_tool(label, base_name):
+        if label:
+            return rctx.path(label)
+        suffix = ".exe" if rctx.os.name.startswith("windows") else ""
+        candidate = rctx.which(base_name + suffix)
+        if candidate:
+            return candidate
+        return None
+
+    pkg_config_bin = _resolve_tool(pkg_config_label, "pkg-config")
+    if not pkg_config_bin:
+        fail("Unable to locate pkg-config on PATH")
+    readelf_bin = _resolve_tool(readelf_label, "readelf")
+    otool_bin = _resolve_tool(otool_label, "otool")
 
     def _identify_windows_dll(interface_path):
         return identify_windows_dll(rctx, interface_path)
