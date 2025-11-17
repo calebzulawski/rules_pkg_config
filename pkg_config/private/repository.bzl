@@ -223,6 +223,7 @@ def _pkg_config_repository_impl(rctx):
     package = rctx.attr.package
     _write_root_build_file(rctx)
     lines = []
+
     def _alias_block(name, target):
         lines.extend([
             "alias(",

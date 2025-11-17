@@ -4,11 +4,12 @@ module(
 )
 
 bazel_dep(name = "rules_pkg_config", version = "0.0.0")
-
-local_path_override(module_name = "rules_pkg_config", path = "../..")
+local_path_override(
+    module_name = "rules_pkg_config",
+    path = "../..",
+)
 
 pkg = use_extension("@rules_pkg_config//pkg_config:extensions.bzl", "pkg_config")
-
 pkg.import_from_host(
     search_paths = [
         "/usr/lib/*/pkgconfig",
@@ -16,7 +17,5 @@ pkg.import_from_host(
         "/usr/share/pkgconfig",
     ],
 )
-
 pkg.package(name = "zlib")
-
 use_repo(pkg, "zlib")

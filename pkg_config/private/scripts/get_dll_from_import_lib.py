@@ -18,11 +18,8 @@ def parse_lib(path):
         sys.exit("Not a valid COFF archive (.lib)")
 
     pos = 8  # skip global header
-    dlls = set()
-
     while pos + 60 <= len(data):
         hdr = data[pos : pos + 60]
-        name = hdr[:16].rstrip()
         try:
             size = int(hdr[48:58].decode("ascii").strip())
         except ValueError:
