@@ -15,7 +15,10 @@ _import_from_host = tag_class({
 
 _import_from_directory = tag_class({
     "directory": attr.label(doc = "Directory containing packages", providers = [DirectoryInfo], mandatory = True),
-    "compatible_with": attr.label(doc = "Platform constraints for this directory", mandatory = True),
+    "compatible_with": attr.label_list(
+        doc = "Platform constraints for this directory",
+        default = HOST_CONSTRAINTS,
+    ),
     "search_paths": attr.string_list(doc = "Subdirectories to search for .pc files", default = ["lib/pkgconfig", "share/pkgconfig"]),
 })
 
@@ -60,10 +63,14 @@ def _pkg_config_extension_impl(ctx):
     package_names = [p.name for p in packages]
     package_repo_map = {name: {} for name in package_names}
 
+    def _register_repo(package, repo_name):
+        config_label = "@{}//:constraints".format(repo_name)
+        package_repo_map[package][config_label] = repo_name
+
     if host_import:
         for package in package_names:
-            repo_name = "pkg_config_host_{}".format(package)
-            package_repo_map[package]["//conditions:default"] = repo_name
+            repo_name = "{}_host".format(package)
+            _register_repo(package, repo_name)
             pkg_config_host_repository(
                 name = repo_name,
                 package = package,
@@ -71,16 +78,18 @@ def _pkg_config_extension_impl(ctx):
                 pkg_config = toolchain.pkg_config,
                 readelf = toolchain.readelf,
                 otool = toolchain.otool,
+                constraints = HOST_CONSTRAINTS,
             )
 
     for directory_import in directory_imports:
-        constraint = directory_import.compatible_with
-        constraint_key = str(constraint)
+        constraints = directory_import.compatible_with
+        normalized_constraints = sorted([str(value) for value in constraints])
+        constraint_key = "|".join(normalized_constraints)
         for package in package_names:
             identifier_source = "{}|{}|{}".format(package, directory_import.directory, constraint_key)
-            identifier = str(abs(hash(identifier_source)))
-            repo_name = "pkg_config_dir_{}_{}".format(package, identifier)
-            package_repo_map[package][constraint_key] = repo_name
+            identifier = "%x" % abs(hash(identifier_source))
+            repo_name = "{}_{}".format(package, identifier)
+            _register_repo(package, repo_name)
             pkg_config_directory_repository(
                 name = repo_name,
                 package = package,
@@ -89,6 +98,7 @@ def _pkg_config_extension_impl(ctx):
                 pkg_config = toolchain.pkg_config,
                 readelf = toolchain.readelf,
                 otool = toolchain.otool,
+                constraints = constraints,
             )
 
     for package in package_names:

@@ -13,7 +13,6 @@ pkg = use_extension("@rules_pkg_config//pkg_config:extensions.bzl", "pkg_config"
 
 pkg.import_from_directory(
     directory = "@repo_env_repo//:files",
-    compatible_with = "//conditions:default",
 )
 pkg.package(name = "simple")
 

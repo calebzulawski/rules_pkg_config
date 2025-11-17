@@ -68,8 +68,18 @@ def _repo_root(rctx):
 def _write_root_build_file(rctx):
     rctx.file("BUILD.bazel", "package(default_visibility = [\"//visibility:public\"])")
 
-def _write_pkg_config_targets(rctx, entries):
-    lines = [_PKG_CONFIG_LOAD, ""]
+def _write_pkg_config_targets(rctx, entries, constraints):
+    lines = []
+    constraint_values = [str(value) for value in constraints]
+    if constraint_values:
+        lines.extend([
+            "config_setting(",
+            '    name = "constraints",',
+            "    constraint_values = {values},".format(values = _format_string_list(constraint_values)),
+            ")",
+            "",
+        ])
+    lines.extend([_PKG_CONFIG_LOAD, ""])
     for entry in entries:
         lines.append("pkg_config_import(")
         lines.append('    name = "{name}",'.format(name = entry.name))
@@ -136,7 +146,7 @@ def _pkg_config_directory_repository_impl(rctx):
             cflags = cflag_args,
             link_entries = link_entries,
         ))
-    _write_pkg_config_targets(rctx, entries)
+    _write_pkg_config_targets(rctx, entries, rctx.attr.constraints)
 
 def _expand_host_search_paths(rctx, python_bin):
     paths = [p for p in rctx.attr.search_paths if p.strip()]
@@ -207,22 +217,21 @@ def _pkg_config_host_repository_impl(rctx):
             cflags = cflag_args,
             link_entries = link_entries,
         ))
-    _write_pkg_config_targets(rctx, entries)
+    _write_pkg_config_targets(rctx, entries, rctx.attr.constraints)
 
 def _pkg_config_repository_impl(rctx):
     package = rctx.attr.package
     _write_root_build_file(rctx)
     lines = []
-
     def _alias_block(name, target):
         lines.extend([
             "alias(",
             '    name = "{name}",'.format(name = name),
             "    actual = select({",
         ])
-        for constraint, repo in sorted(rctx.attr.repos.items()):
-            lines.append('        "{constraint}": "@{repo}//:{target}",'.format(
-                constraint = constraint,
+        for config_label, repo in sorted(rctx.attr.repos.items()):
+            lines.append('        "{config}": "@{repo}//:{target}",'.format(
+                config = config_label,
                 repo = repo,
                 target = target,
             ))
@@ -255,6 +264,7 @@ pkg_config_directory_repository = repository_rule(
         "readelf": attr.label(),
         "otool": attr.label(),
         "search_paths": attr.string_list(),
+        "constraints": attr.label_list(mandatory = True),
     },
     doc = "Generates pkg_config_import targets by executing pkg-config against an arbitrary repository root.",
 )
@@ -267,6 +277,7 @@ pkg_config_host_repository = repository_rule(
         "readelf": attr.label(),
         "otool": attr.label(),
         "search_paths": attr.string_list(),
+        "constraints": attr.label_list(mandatory = True),
     },
     doc = "Generates pkg_config_import targets by executing pkg-config directly against host-installed packages.",
 )
