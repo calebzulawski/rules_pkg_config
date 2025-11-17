@@ -17,6 +17,10 @@ def identify_windows_dll(rctx, interface_path):
 
 def shared_library_name(rctx, shared_path, readelf_bin, otool_bin):
     if shared_path.endswith(".dylib"):
+        # head -c 0 will fail on dyld-cache placeholders because the file can't be opened.
+        probe = rctx.execute(["head", "-c", "0", shared_path])
+        if probe.return_code != 0:
+            return None
         result = rctx.execute([otool_bin, "-D", shared_path])
         if result.return_code != 0:
             fail("otool failed with {}\nstdout:\n{}\nstderr:\n{}".format(result.return_code, result.stdout, result.stderr))
