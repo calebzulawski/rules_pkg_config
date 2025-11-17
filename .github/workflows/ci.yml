@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: Format & Lint (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          disk-cache: true
+
+      - name: Format check
+        run: bazel run //:format.check
+
+      - name: Lint
+        run: bazel test //:lint
+
+  examples:
+    name: Examples
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          disk-cache: true
+
+      - name: Install zlib (Windows)
+        if: runner.os == 'Windows'
+        run: vcpkg install zlib:x64-windows
+
+      - name: Import-from-directory example
+        run: bazel test //...
+        working-directory: examples/import_from_directory
+
+      - name: Import-from-host example
+        run: bazel test //...
+        working-directory: examples/import_from_host

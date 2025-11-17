@@ -30,5 +30,5 @@ pip.parse(
 use_repo(pip, "pypi")
 use_repo(pip, "pypi_311_py_rattler")
 
-multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
+multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool", dev_dependency = True)
 use_repo(multitool, "multitool")
