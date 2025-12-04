@@ -41,26 +41,17 @@ def shared_library_name(rctx, shared_path, readelf_bin, otool_bin):
                 return line[start + 1:end].strip()
         return shared_path
 
-def make_tool_config(
-        rctx,
-        *,
-        pkg_config_label,
-        readelf_label,
-        otool_label):
-    def _resolve_tool(label, base_name):
-        if label:
-            return rctx.path(label)
-        suffix = ".exe" if rctx.os.name.startswith("windows") else ""
-        candidate = rctx.which(base_name + suffix)
-        if candidate:
-            return candidate
-        return None
+def make_tool_config(rctx):
+    otool = rctx.which("otool")
 
-    pkg_config_bin = _resolve_tool(pkg_config_label, "pkg-config")
-    if not pkg_config_bin:
-        fail("Unable to locate pkg-config on PATH")
-    readelf_bin = _resolve_tool(readelf_label, "readelf")
-    otool_bin = _resolve_tool(otool_label, "otool")
+    if rctx.os.name.startswith("windows"):
+        pkg_config = "@rules_pkg_config_pkg_config//:pkgconf.exe"
+        readelf = "@rules_pkg_config_binutils//:readelf.exe"
+    else:
+        pkg_config = "@rules_pkg_config_pkg_config//:bin/pkgconf"
+        readelf = "@rules_pkg_config_binutils//:bin/readelf"
+    pkg_config = rctx.path(Label(pkg_config))
+    readelf = rctx.path(Label(readelf))
 
     def _identify_windows_dll(interface_path):
         return identify_windows_dll(rctx, interface_path)
@@ -69,14 +60,14 @@ def make_tool_config(
         return shared_library_name(
             rctx,
             shared_path,
-            readelf_bin,
-            otool_bin,
+            readelf,
+            otool,
         )
 
     identify_fn = _identify_windows_dll
 
     return struct(
-        pkg_config = pkg_config_bin,
+        pkg_config = pkg_config,
         identify_windows_dll = identify_fn,
         shared_library_name = _shared_library_name,
     )

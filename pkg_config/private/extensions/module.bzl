@@ -26,32 +26,15 @@ _package = tag_class({
     "name": attr.string(doc = "Name of the package", mandatory = True),
 })
 
-_toolchain = tag_class({
-    "pkgconfig": attr.label(),
-    "readelf": attr.label(),
-    "otool": attr.label(),
-})
-
 def _pkg_config_extension_impl(ctx):
     packages = []
     root_packages = []
     host_import = None
     directory_imports = []
-    toolchain = struct(
-        pkg_config = None,
-        readelf = None,
-        otool = None,
-    )
 
     # Read tags
     for mod in ctx.modules:
         if mod.is_root:
-            for t in mod.tags.toolchain:
-                toolchain = struct(
-                    pkg_config = t.pkg_config,
-                    readelf = t.readelf,
-                    otool = t.otool,
-                )
             for i in mod.tags.import_from_host:
                 host_import = i
             directory_imports = mod.tags.import_from_directory
@@ -75,9 +58,6 @@ def _pkg_config_extension_impl(ctx):
                 name = repo_name,
                 package = package,
                 search_paths = host_import.search_paths,
-                pkg_config = toolchain.pkg_config,
-                readelf = toolchain.readelf,
-                otool = toolchain.otool,
                 constraints = HOST_CONSTRAINTS,
             )
 
@@ -95,9 +75,6 @@ def _pkg_config_extension_impl(ctx):
                 package = package,
                 directory = directory_import.directory,
                 search_paths = directory_import.search_paths,
-                pkg_config = toolchain.pkg_config,
-                readelf = toolchain.readelf,
-                otool = toolchain.otool,
                 constraints = constraints,
             )
 
@@ -130,7 +107,6 @@ pkg_config_extension = module_extension(
         "import_from_host": _import_from_host,
         "import_from_directory": _import_from_directory,
         "package": _package,
-        "toolchain": _toolchain,
     },
     doc = "Import packages via pkg-config",
 )

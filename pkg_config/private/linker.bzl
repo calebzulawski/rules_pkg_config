@@ -96,26 +96,32 @@ def _resolve_library_entry(rctx, env_root, env_root_str, lib_dirs, lib_name, sta
     find_with_ext = lambda directories, candidates, extensions: find_file_with_extensions(env_root, env_root_str, directories, candidates, extensions, rctx = rctx)
     find_by_name = lambda directories, filename: find_file_by_name(env_root, env_root_str, directories, filename, rctx = rctx)
 
-    if static:
+    def resolve_static():
         match = find_with_ext(lib_dirs, candidate_bases, platform_config.static_exts)
         if match:
             return static_entry(match.relative)
         return None
 
-    if platform_config.interface_exts:
-        interface = find_with_ext(lib_dirs, candidate_bases, platform_config.interface_exts)
-        if interface:
-            resolved = _resolve_windows_dynamic_library(find_by_name, lib_dirs, interface, platform_config.dll_dirs, tools)
-            if resolved:
-                return resolved
-            return dynamic_entry(interface.relative, "")
+    def resolve_dynamic():
+        if platform_config.interface_exts:
+            interface = find_with_ext(lib_dirs, candidate_bases, platform_config.interface_exts)
+            if interface:
+                resolved = _resolve_windows_dynamic_library(find_by_name, lib_dirs, interface, platform_config.dll_dirs, tools)
+                if resolved:
+                    return resolved
+                return dynamic_entry(interface.relative, "")
 
-    match = find_with_ext(lib_dirs, candidate_bases, platform_config.shared_exts)
-    if match:
-        shared_path = _resolve_posix_shared_library(find_by_name, lib_dirs, match, tools)
-        if shared_path != None:
-            return dynamic_entry(shared_path, "")
-    return None
+        match = find_with_ext(lib_dirs, candidate_bases, platform_config.shared_exts)
+        if match:
+            shared_path = _resolve_posix_shared_library(find_by_name, lib_dirs, match, tools)
+            if shared_path != None:
+                return dynamic_entry(shared_path, "")
+        return None
+
+    if static:
+        return resolve_static() or resolve_dynamic()
+    else:
+        return resolve_dynamic() or resolve_static()
 
 def resolve_link_entries(rctx, env_root, env_root_str, lib_args, static, tools):
     lib_dirs = []

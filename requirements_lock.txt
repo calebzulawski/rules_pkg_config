@@ -1,1 +1,0 @@
-# Placeholder lock file for Bazel pip extension

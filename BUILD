@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:public"])
 
 format_multirun(
     name = "format",
-    python = "@multitool//tools/ruff",
+    python = "@aspect_rules_lint//format:ruff",
     starlark = "@buildifier_prebuilt//:buildifier",
 )
 

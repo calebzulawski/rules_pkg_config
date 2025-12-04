@@ -103,12 +103,7 @@ def _pkg_config_directory_repository_impl(rctx):
     package = rctx.attr.package
     env_root = _repo_root(rctx)
     env_root_str = env_path(str(env_root))
-    tools = make_tool_config(
-        rctx,
-        pkg_config_label = rctx.attr.pkg_config,
-        readelf_label = rctx.attr.readelf,
-        otool_label = rctx.attr.otool,
-    )
+    tools = make_tool_config(rctx)
 
     base_paths = rctx.attr.search_paths
     pathsep = ";" if rctx.os.name.startswith("windows") else ":"
@@ -175,12 +170,7 @@ def _host_pkg_config_paths(rctx, python_bin):
     return dirs
 
 def _pkg_config_host_repository_impl(rctx):
-    tools = make_tool_config(
-        rctx,
-        pkg_config_label = rctx.attr.pkg_config,
-        readelf_label = rctx.attr.readelf,
-        otool_label = rctx.attr.otool,
-    )
+    tools = make_tool_config(rctx)
 
     _write_root_build_file(rctx)
     python_bin = python_binary(rctx)
@@ -261,9 +251,6 @@ pkg_config_directory_repository = repository_rule(
     attrs = {
         "directory": attr.label(),
         "package": attr.string(),
-        "pkg_config": attr.label(),
-        "readelf": attr.label(),
-        "otool": attr.label(),
         "search_paths": attr.string_list(),
         "constraints": attr.label_list(mandatory = True),
     },
@@ -274,9 +261,6 @@ pkg_config_host_repository = repository_rule(
     implementation = _pkg_config_host_repository_impl,
     attrs = {
         "package": attr.string(),
-        "pkg_config": attr.label(),
-        "readelf": attr.label(),
-        "otool": attr.label(),
         "search_paths": attr.string_list(),
         "constraints": attr.label_list(mandatory = True),
     },

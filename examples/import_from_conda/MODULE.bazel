@@ -1,0 +1,29 @@
+module(
+    name = "import_from_conda_example",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "rules_pkg_config", version = "0.0.0")
+bazel_dep(name = "rules_conda", version = "0.1.1")
+bazel_dep(name = "platforms", version = "1.0.0")
+
+local_path_override(
+    module_name = "rules_pkg_config",
+    path = "../..",
+)
+
+conda = use_extension("@rules_conda//conda:extensions.bzl", "conda")
+conda.environment(
+    name = "env",
+    lockfile = "conda.lock",
+)
+use_repo(conda, "env")
+
+pkg = use_extension("@rules_pkg_config//pkg_config:extensions.bzl", "pkg_config")
+pkg.import_from_directory(
+    directory = "@env",
+)
+pkg.package(name = "libarchive")
+pkg.package(name = "icu-i18n")
+use_repo(pkg, "libarchive")
+use_repo(pkg, "icu-i18n")

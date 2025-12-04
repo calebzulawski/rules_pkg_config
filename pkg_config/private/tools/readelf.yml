@@ -1,0 +1,11 @@
+name: rules_pkg_config_binutils
+channels:
+  - conda-forge
+dependencies:
+  - binutils
+platforms:
+  - linux-64
+  - linux-aarch64
+  - osx-arm64
+  - osx-64
+  - win-64

@@ -1,0 +1,43 @@
+load("@rules_conda//conda/cc:import.bzl", "import_library")
+load("@rules_conda//conda/environment:defs.bzl", "lock_environments")
+
+lock_environments(
+    name = "lock",
+    environments = ["env.yml"],
+)
+
+cc_test(
+    name = "libarchive_test",
+    srcs = ["main.cc"],
+    data = ["empty.tar"],
+    deps = ["@libarchive"],
+)
+
+# iconv doesn't have a pkg-config file
+# https://github.com/conda-forge/libiconv-feedstock/issues/36
+import_library(
+    name = "iconv",
+    environment = "@env",
+    packages = ["libiconv"],
+    shared_library = select({
+        "@platforms//os:linux": "lib/libiconv.so.2",
+        "@platforms//os:macos": "lib/libiconv.2.dylib",
+    }),
+)
+
+cc_test(
+    name = "libarchive_static_test",
+    srcs = ["main.cc"],
+    data = ["empty.tar"],
+    deps = [
+        "@libarchive//:static",
+    ] + select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            # These two aren't necessary for building, but
+            # they allow bazel to set the rpaths correctly.
+            "@icu-i18n",
+            "iconv",
+        ],
+    }),
+)
