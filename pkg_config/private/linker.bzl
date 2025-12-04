@@ -43,7 +43,7 @@ def dynamic_entry(library, interface):
     interface_field = interface if interface else ""
     return "|".join(["D", library, interface_field])
 
-def _resolve_windows_dynamic_library(find_file_by_name_fn, lib_dirs, interface, dll_dirs, tools):
+def _resolve_windows_dynamic_library(find_file_by_name_fn, lib_dirs, interface, tools):
     if tools.identify_windows_dll == None:
         return None
     dll_name = tools.identify_windows_dll(interface.absolute)
@@ -59,7 +59,6 @@ def _resolve_windows_dynamic_library(find_file_by_name_fn, lib_dirs, interface, 
         stripped = lib_dir.removesuffix("/lib")
         if stripped != lib_dir:
             candidate_dirs.append(paths.join(stripped, "bin"))
-    candidate_dirs.extend(dll_dirs)
     candidate_dirs = [d for d in candidate_dirs if d not in ["", None]]
 
     dll_entry = find_file_by_name_fn(candidate_dirs, dll_name)
@@ -106,7 +105,7 @@ def _resolve_library_entry(rctx, env_root, env_root_str, lib_dirs, lib_name, sta
         if platform_config.interface_exts:
             interface = find_with_ext(lib_dirs, candidate_bases, platform_config.interface_exts)
             if interface:
-                resolved = _resolve_windows_dynamic_library(find_by_name, lib_dirs, interface, platform_config.dll_dirs, tools)
+                resolved = _resolve_windows_dynamic_library(find_by_name, lib_dirs, interface, tools)
                 if resolved:
                     return resolved
                 return dynamic_entry(interface.relative, "")
