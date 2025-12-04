@@ -45,8 +45,8 @@ def make_tool_config(rctx):
     otool = rctx.which("otool")
 
     if rctx.os.name.startswith("windows"):
-        pkg_config = "@rules_pkg_config_pkg_config//:pkgconf.exe"
-        readelf = "@rules_pkg_config_binutils//:readelf.exe"
+        pkg_config = "@rules_pkg_config_pkg_config//:Library/bin/pkgconf.exe"
+        readelf = "@rules_pkg_config_binutils//:Library/bin/readelf.exe"
     else:
         pkg_config = "@rules_pkg_config_pkg_config//:bin/pkgconf"
         readelf = "@rules_pkg_config_binutils//:bin/readelf"
