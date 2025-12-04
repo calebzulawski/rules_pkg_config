@@ -23,6 +23,11 @@ import_library(
         "@platforms//os:linux": "lib/libiconv.so.2",
         "@platforms//os:macos": "lib/libiconv.2.dylib",
     }),
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 cc_test(
