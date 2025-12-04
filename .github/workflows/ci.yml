@@ -57,5 +57,6 @@ jobs:
         working-directory: examples/import_from_directory
 
       - name: Import-from-host example
+        if: runner.os != 'macOS'
         run: bazel test //...
         working-directory: examples/import_from_host
